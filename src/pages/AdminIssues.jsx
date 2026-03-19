@@ -305,7 +305,8 @@ export default function AdminIssues() {
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <span className="font-semibold text-white capitalize">{issue.category}</span>
-                        {issue.is_high_risk && <AlertTriangle size={12} className="inline ml-1 text-red-400" />}
+                        {issue.priority >= 8 && <span className="ml-2 px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] font-black rounded border border-red-500/30 uppercase tracking-tighter animate-pulse">High Priority</span>}
+                        {issue.is_high_risk && <AlertTriangle size={12} className="inline ml-1 text-red-500" />}
                       </div>
                       <span className={statusClass(issue.status)}>{issue.status}</span>
                     </div>

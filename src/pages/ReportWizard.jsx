@@ -61,6 +61,7 @@ export default function ReportWizard() {
   // ── Step 2: AI Details & Audio ───
   const [aiResult, setAiResult] = useState(null)
   const [description, setDescription] = useState('')
+  const [transcription, setTranscription] = useState('')
   const [audioBlob, setAudioBlob] = useState(null)
   const [isRecording, setIsRecording] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -216,6 +217,7 @@ export default function ReportWizard() {
       const formData = new FormData()
       formData.append('file', new File([blob], 'recording.webm', { type: 'audio/webm' }))
       formData.append('model', 'whisper-large-v3')
+      formData.append('prompt', 'This is a civic issue report. The user might speak in English, Hindi, or Hinglish. Please transcribe clearly.')
       formData.append('response_format', 'json')
 
       const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -226,15 +228,53 @@ export default function ReportWizard() {
 
       if (!res.ok) throw new Error('Transcription failed')
       const data = await res.json()
+      
       if (data.text) {
-        setDescription(prev => prev ? `${prev}\n${data.text}` : data.text)
-        toast.success('Voice transcribed!')
+        setTranscription(data.text)
+        // Now, let's "clean" and possibly translate the text to be more professional
+        await refineAndTranslateText(data.text)
+        toast.success('Voice processed!')
       }
     } catch (err) {
       console.error(err)
       toast.error('Could not transcribe audio')
     } finally {
       setTranscribing(false)
+    }
+  }
+
+  async function refineAndTranslateText(rawText) {
+    const GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY
+    try {
+      // Use a fast LLM to clean up transcription and provide English translation
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${GROQ_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { 
+              role: 'system', 
+              content: 'You are a helpful assistant for a civic portal. The user has spoken a description of a problem. If the text is in Hindi or Hinglish, transcribe it clearly in English. If it is already in English, just clean up any errors. Return ONLY the final English description.' 
+            },
+            { role: 'user', content: rawText }
+          ]
+        })
+      })
+
+      if (!res.ok) {
+        setDescription(prev => prev ? `${prev}\n${rawText}` : rawText)
+        return
+      }
+
+      const data = await res.json()
+      const refined = data.choices[0]?.message?.content || rawText
+      setDescription(prev => prev ? `${prev}\n${refined}` : refined)
+    } catch (err) {
+      setDescription(prev => prev ? `${prev}\n${rawText}` : rawText)
     }
   }
 
@@ -262,9 +302,10 @@ export default function ReportWizard() {
         department: aiResult.department || 'Municipal Corporation',
         status: 'Pending',
         description: description,
+        transcription: transcription || null,
         latitude: location.lat,
         longitude: location.lng,
-        address,
+        address: location.address || address,
         image_url: imgUrl,
         audio_url: audUrl,
         contact_phone: phone,

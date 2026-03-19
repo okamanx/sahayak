@@ -1,11 +1,7 @@
-/**
- * Grok Vision AI (xAI) — Civic Issue Classifier
- * Uses grok-2-vision-1212 as primary, falls back to Gemini → Demo
- */
-
-const GROK_KEY   = import.meta.env.VITE_GROK_API_KEY
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
 const GROQ_KEY   = import.meta.env.VITE_GROQ_API_KEY
+const OR_KEY     = import.meta.env.VITE_OPENROUTER_API_KEY
+const OR_MODEL   = import.meta.env.VITE_OPENROUTER_MODEL || 'google/gemini-2.0-flash-001'
 
 // Try newest model first, fall back to stable, then specific versions
 const GEMINI_MODELS = [
@@ -15,7 +11,7 @@ const GEMINI_MODELS = [
   'gemini-2.5-flash'
 ]
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
-const GROK_BASE   = 'https://api.x.ai/v1/chat/completions'
+const GROQ_BASE   = 'https://api.groq.com/openai/v1/chat/completions'
 
 const CATEGORIES = ['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight', 'other']
 const CATEGORY_WEIGHTS = { pothole: 3, garbage: 2, drainage: 4, pipeline: 4, streetlight: 3, other: 1 }
@@ -55,51 +51,14 @@ If NOT a civic issue (person, food, indoor room, game screenshot, phone screen, 
 If YES a civic issue, return ONLY:
 {"isCivicIssue":true,"category":"<pothole|garbage|drainage|pipeline|streetlight|other>","severity":<1-5>,"confidence":<0.0-1.0>,"description":"<2 sentences about the issue>","isHighRisk":<true|false>}
 
-Severity: 1=minor cosmetic, 2=low, 3=moderate daily impact, 4=high safety, 5=critical/immediate danger.
+Severity levels:
+1: Minor (Cosmetic/cracks, small graffiti)
+2: Low (Small potholes, single streetlight out, minor litter)
+3: Moderate (Large potholes, broken water pipe with slow leak, street-wide litter)
+4: High (Major road damage, flooding, exposed electrical wires)
+5: Critical (Building collapse, massive gas/water leak, life-threatening situation)
 Respond ONLY with valid JSON, no markdown, no extra text.`
 
-/**
- * Try Grok Vision (xAI) — OpenAI-compatible API
- */
-async function tryGrok(imageFile) {
-  const base64   = await fileToBase64(imageFile)
-  const mimeType = imageFile.type || 'image/jpeg'
-
-  const res = await fetch(GROK_BASE, {
-    method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${GROK_KEY}`,
-    },
-    body: JSON.stringify({
-      model: 'grok-2-vision-1212',
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'text', text: CIVIC_PROMPT },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
-        ]
-      }],
-      temperature: 0.1,
-      max_tokens: 256,
-    }),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText)
-    throw new Error(`Grok ${res.status}: ${errText.slice(0, 120)}`)
-  }
-
-  const result = await res.json()
-  const text   = result.choices?.[0]?.message?.content || ''
-  if (!text) throw new Error('Grok returned empty response')
-
-  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-  const match   = jsonStr.match(/\{[\s\S]*\}/)
-  if (!match) throw new Error(`Invalid JSON from Grok: ${text.slice(0, 60)}`)
-
-  return JSON.parse(match[0])
-}
 
 function parseAndBuildResult(parsed) {
   if (!parsed.isCivicIssue) {
@@ -144,8 +103,6 @@ async function tryGemini(imageFile, model) {
   }
 
   const result = await res.json()
-
-  // Handle blocked / safety filtered responses
   const candidate = result.candidates?.[0]
   if (!candidate) throw new Error('Gemini returned no candidates (possibly blocked)')
   if (candidate.finishReason === 'SAFETY') throw new Error('Image was blocked by safety filters')
@@ -153,10 +110,53 @@ async function tryGemini(imageFile, model) {
   const text = candidate.content?.parts?.[0]?.text || ''
   if (!text) throw new Error('Gemini returned empty response')
 
-  // Parse JSON — extract from markdown if needed
   const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
   const match   = jsonStr.match(/\{[\s\S]*\}/)
   if (!match) throw new Error(`Invalid JSON from Gemini: ${text.slice(0, 60)}`)
+
+  return JSON.parse(match[0])
+}
+
+/**
+ * Try OpenRouter Vision (Unified API)
+ */
+async function tryOpenRouter(imageFile) {
+  const base64   = await fileToBase64(imageFile)
+  const mimeType = imageFile.type || 'image/jpeg'
+
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${OR_KEY}`,
+      'Content-Type': 'application/json',
+      'HTTP-Referer': 'https://sahayak-portal.vercel.app', // Optional for OpenRouter
+      'X-Title': 'Sahayak Civic Portal',
+    },
+    body: JSON.stringify({
+      model: OR_MODEL,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: CIVIC_PROMPT },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
+        ]
+      }],
+      temperature: 0.1,
+    })
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText)
+    throw new Error(`OpenRouter ${res.status}: ${errText.slice(0, 100)}`)
+  }
+
+  const result = await res.json()
+  const text = result.choices?.[0]?.message?.content || ''
+  if (!text) throw new Error('OpenRouter returned empty response')
+
+  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  const match   = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error(`Invalid JSON from OpenRouter: ${text.slice(0, 60)}`)
 
   return JSON.parse(match[0])
 }
@@ -205,42 +205,6 @@ async function tryGroq(imageFile) {
 }
 
 /**
- * Try local Ollama Vision (e.g. LLaVA or Llama-3.2-Vision)
- */
-async function tryOllama(imageFile) {
-  const base64 = await fileToBase64(imageFile)
-  
-  // Ollama crashes (segfault 0xc0000005) if the base64 string includes the data URL prefix
-  const rawBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
-
-  const res = await fetch('/api/ollama/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llava',
-      prompt: CIVIC_PROMPT,
-      images: [rawBase64],
-      stream: false
-    }),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText)
-    throw new Error(`Ollama ${res.status}: ${errText.slice(0, 80)}`)
-  }
-
-  const result = await res.json()
-  const text = result.response || ''
-  if (!text || text.trim() === '') throw new Error('Ollama returned empty response')
-
-  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
-  const match   = jsonStr.match(/\{[\s\S]*\}/)
-  if (!match) throw new Error(`Invalid JSON from Ollama: ${text.slice(0, 60)}`)
-
-  return JSON.parse(match[0])
-}
-
-/**
  * Classify using Gemini Vision — tries multiple models
  */
 export async function classifyWithGemini(imageFile) {
@@ -264,11 +228,11 @@ export async function classifyWithGemini(imageFile) {
  * Throws an error if both options fail or no keys are configured.
  */
 export async function classifyImage(imageFile) {
-  const hasGrok   = GROK_KEY   && GROK_KEY   !== 'your-grok-api-key-here' && !GROK_KEY.startsWith('your-')
   const hasGemini = GEMINI_KEY && GEMINI_KEY !== 'your-gemini-api-key-here' && !GEMINI_KEY.startsWith('your-')
   const hasGroq   = GROQ_KEY   && GROQ_KEY   !== 'your-groq-api-key-here' && !GROQ_KEY.startsWith('your-')
+  const hasOR     = OR_KEY     && OR_KEY     !== 'your-openrouter-key-here' && !OR_KEY.startsWith('your-')
 
-  let lastError = new Error('No valid AI API keys found. Please add Gemini or Groq keys to .env')
+  let lastError = new Error('No valid AI API keys found. Please add Gemini, Groq, or OpenRouter keys to .env')
 
   // 1. Try Gemini first (Best free vision tier)
   if (hasGemini) {
@@ -288,40 +252,25 @@ export async function classifyImage(imageFile) {
       return parseAndBuildResult(parsed)
     } catch (e) {
       if (e.notCivic) throw e
-      console.warn(`[Groq] ${e.message} — falling back to Grok`)
+      console.warn(`[Groq] ${e.message} — falling back to OpenRouter`)
       lastError = e
     }
   }
 
-  // 3. Try Grok (xAI)
-  if (hasGrok) {
+  // 3. Try OpenRouter (Robust Multi-model Fallback)
+  if (hasOR) {
     try {
-      const parsed = await tryGrok(imageFile)
+      const parsed = await tryOpenRouter(imageFile)
       return parseAndBuildResult(parsed)
     } catch (e) {
       if (e.notCivic) throw e
-      console.warn(`[Grok] ${e.message} — falling back to Ollama`)
+      console.warn(`[OpenRouter] ${e.message} — all cloud providers failed`)
       lastError = e
     }
   }
 
-  // 4. Ollama local fallback
-  try {
-    const parsed = await tryOllama(imageFile)
-    return parseAndBuildResult(parsed)
-  } catch (e) {
-    if (e.notCivic) throw e
-    console.warn(`[Ollama] ${e.message} — analysis failed`)
-    lastError = e
-  }
-
-  // If everything fails (API limits AND Local Hardware OOM crashes), use Demo Mode
-  // so the user can at least test the rest of the application flow.
+  // 4. All Cloud APIs failed
   console.error('[AI Chain Failed]', lastError.message)
-  
-  const demos = ['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight']
-  const cat   = demos[Math.floor(Math.random() * demos.length)]
-  const sev   = 3
   
   return {
     category: 'other', 
@@ -332,6 +281,6 @@ export async function classifyImage(imageFile) {
     description: '',
     confidence: 0,
     aiFailed: true,
-    error: lastError.message.slice(0, 100)
+    error: `Cloud AI Limit: ${lastError.message.slice(0, 100)}`
   }
 }
