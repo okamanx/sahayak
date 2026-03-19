@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { Camera, Image as ImageIcon, MapPin, Mic, Send, RefreshCw, X, AlertTriangle, CheckCircle, ArrowRight, ArrowLeft } from 'lucide-react'
 import { supabase, uploadImage, uploadAudio, generateReportId, CATEGORY_ICONS } from '../lib/supabase'
-import { classifyImage } from '../lib/classifier'
+import { classifyImage, DEPARTMENTS } from '../lib/classifier'
 import OTPModal from '../components/OTPModal'
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -62,6 +62,10 @@ export default function ReportWizard() {
   const [aiResult, setAiResult] = useState(null)
   const [description, setDescription] = useState('')
   const [audioBlob, setAudioBlob] = useState(null)
+  const [isRecording, setIsRecording] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
   
   // ── Step 3: Location ─────────────
   const [location, setLocation] = useState({ lat: null, lng: null })
@@ -164,6 +168,74 @@ export default function ReportWizard() {
       },
       { enableHighAccuracy: true }
     )
+  }
+
+  // ── Voice Recording & STT ──────────
+  
+  async function toggleRecording() {
+    if (isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const mediaRecorder = new MediaRecorder(stream)
+        mediaRecorderRef.current = mediaRecorder
+        audioChunksRef.current = []
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data)
+        }
+
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+          setAudioBlob(blob)
+          await transcribeAudio(blob)
+          stream.getTracks().forEach(track => track.stop())
+        }
+
+        mediaRecorder.start()
+        setIsRecording(true)
+        toast('Recording... speak now', { icon: '🎙️' })
+      } catch (err) {
+        toast.error('Microphone access denied')
+      }
+    }
+  }
+
+  async function transcribeAudio(blob) {
+    setTranscribing(true)
+    const GROQ_KEY = import.meta.env.VITE_GROQ_API_KEY
+    if (!GROQ_KEY || GROQ_KEY.startsWith('your-')) {
+      toast.error('Groq API Key missing for transcription')
+      setTranscribing(false)
+      return
+    }
+
+    try {
+      const formData = new FormData()
+      formData.append('file', new File([blob], 'recording.webm', { type: 'audio/webm' }))
+      formData.append('model', 'whisper-large-v3')
+      formData.append('response_format', 'json')
+
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_KEY}` },
+        body: formData
+      })
+
+      if (!res.ok) throw new Error('Transcription failed')
+      const data = await res.json()
+      if (data.text) {
+        setDescription(prev => prev ? `${prev}\n${data.text}` : data.text)
+        toast.success('Voice transcribed!')
+      }
+    } catch (err) {
+      console.error(err)
+      toast.error('Could not transcribe audio')
+    } finally {
+      setTranscribing(false)
+    }
   }
 
   async function handleSubmit() {
@@ -276,25 +348,76 @@ export default function ReportWizard() {
           )}
 
           {/* STEP 2: Review AI Details */}
-          {step === 2 && aiResult && (
+          {step === 2 && (
             <motion.div key="2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <div className="card" style={{ padding: 20 }}>
                 {imagePreview && <img src={imagePreview} alt="Preview" style={{ width: '100%', borderRadius: 12, height: 160, objectFit: 'cover', marginBottom: 16 }} />}
                 
-                <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: 12, borderRadius: 12, marginBottom: 16 }}>
-                  <h3 style={{ fontSize: 12, fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>AI Match Found</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 24 }}>{CATEGORY_ICONS[aiResult.category] || '⚠️'}</span>
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 700, fontSize: 16, textTransform: 'capitalize', color: '#15803d' }}>{aiResult.category}</p>
-                      <p style={{ margin: 0, fontSize: 12, color: '#166534' }}>Severity: {aiResult.severity}/5 | Dept: {aiResult.department}</p>
+                {/* AI SUCCESS BANNER */}
+                {aiResult && !aiResult.aiFailed && (
+                  <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: 12, borderRadius: 12, marginBottom: 16 }}>
+                    <h3 style={{ fontSize: 11, fontWeight: 800, color: '#16a34a', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 6px' }}>AI Match Found</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 24 }}>{CATEGORY_ICONS[aiResult.category] || '⚠️'}</span>
+                      <div>
+                        <p style={{ margin: 0, fontWeight: 700, fontSize: 16, textTransform: 'capitalize', color: '#15803d' }}>{aiResult.category}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: '#166534' }}>Severity: {aiResult.severity}/5 | Dept: {aiResult.department}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* AI FAILURE / MANUAL SELECTION */}
+                {(!aiResult || aiResult.aiFailed) && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8, display: 'block' }}>Select Issue Category</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                      {['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight', 'other'].map(cat => (
+                        <button
+                          key={cat}
+                          onClick={() => setAiResult({ ...aiResult, category: cat, department: DEPARTMENTS[cat] })}
+                          style={{
+                            padding: '10px 4px', borderRadius: 8, border: '1px solid',
+                            borderColor: aiResult?.category === cat ? '#2563eb' : 'var(--border)',
+                            background: aiResult?.category === cat ? '#eff6ff' : '#fff',
+                            color: aiResult?.category === cat ? '#1e40af' : '#475569',
+                            fontSize: 11, fontWeight: 600, cursor: 'pointer', textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: 18, marginBottom: 4 }}>{CATEGORY_ICONS[cat]}</div>
+                          <div style={{ textTransform: 'capitalize' }}>{cat}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {aiResult?.error && <p style={{ fontSize: 10, color: '#94a3b8', marginTop: 8 }}>ℹ️ AI skipped: {aiResult.error}</p>}
+                  </div>
+                )}
 
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6, display: 'block' }}>Description (Extracted)</label>
-                  <textarea value={description} onChange={e => setDescription(e.target.value)} className="input-field" style={{ minHeight: 80, resize: 'none' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Description & Voice Note</label>
+                    <button 
+                      onClick={toggleRecording} 
+                      disabled={transcribing}
+                      className={isRecording ? 'pulse' : ''}
+                      style={{ 
+                        background: isRecording ? '#ef4444' : '#f1f5f9', 
+                        border: 'none', padding: '6px 12px', borderRadius: 20, 
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
+                        color: isRecording ? '#fff' : '#475569', cursor: 'pointer'
+                      }}
+                    >
+                      {transcribing ? <RefreshCw size={14} className="spin" /> : <Mic size={14} />}
+                      {isRecording ? 'Stop Recording' : (transcribing ? 'Transcribing...' : 'Record Voice')}
+                    </button>
+                  </div>
+                  <textarea 
+                    value={description} 
+                    onChange={e => setDescription(e.target.value)} 
+                    placeholder="Describe the issue here, or use the mic to speak..."
+                    className="input-field" 
+                    style={{ minHeight: 100, resize: 'none' }} 
+                  />
                 </div>
 
                 <div style={{ display: 'flex', gap: 12 }}>
@@ -387,7 +510,9 @@ export default function ReportWizard() {
       
       <style>{`
         .spin { animation: spin 1s linear infinite; }
+        .pulse { animation: pulse 1.5s ease-in-out infinite; }
         @keyframes spin { 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.05); } 100% { opacity: 1; transform: scale(1); } }
       `}</style>
     </div>
   )

@@ -9,17 +9,17 @@ const GROQ_KEY   = import.meta.env.VITE_GROQ_API_KEY
 
 // Try newest model first, fall back to stable, then specific versions
 const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
-  'gemini-2.0-flash-001'
+  'gemini-1.5-flash-latest',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash-exp',
+  'gemini-2.5-flash'
 ]
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
 const GROK_BASE   = 'https://api.x.ai/v1/chat/completions'
 
 const CATEGORIES = ['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight', 'other']
 const CATEGORY_WEIGHTS = { pothole: 3, garbage: 2, drainage: 4, pipeline: 4, streetlight: 3, other: 1 }
-const DEPARTMENTS = {
+export const DEPARTMENTS = {
   pothole:     'Road & Infrastructure',
   garbage:     'Sanitation Department',
   drainage:    'Water & Sewage',
@@ -139,6 +139,7 @@ async function tryGemini(imageFile, model) {
 
   if (!res.ok) {
     const errText = await res.text().catch(() => res.statusText)
+    console.error(`[Gemini Error] ${model}:`, errText)
     throw new Error(`Gemini ${model} ${res.status}: ${errText.slice(0, 80)}`)
   }
 
@@ -263,35 +264,48 @@ export async function classifyWithGemini(imageFile) {
  * Throws an error if both options fail or no keys are configured.
  */
 export async function classifyImage(imageFile) {
-  const hasGrok   = GROK_KEY   && GROK_KEY   !== 'your-grok-api-key-here'
-  const hasGemini = GEMINI_KEY && GEMINI_KEY !== 'your-gemini-api-key-here'
+  const hasGrok   = GROK_KEY   && GROK_KEY   !== 'your-grok-api-key-here' && !GROK_KEY.startsWith('your-')
+  const hasGemini = GEMINI_KEY && GEMINI_KEY !== 'your-gemini-api-key-here' && !GEMINI_KEY.startsWith('your-')
+  const hasGroq   = GROQ_KEY   && GROQ_KEY   !== 'your-groq-api-key-here' && !GROQ_KEY.startsWith('your-')
 
-  let lastError = new Error('No valid AI API keys found. Please add Grok or Gemini keys to .env')
+  let lastError = new Error('No valid AI API keys found. Please add Gemini or Groq keys to .env')
 
-  // 1. Try Grok first (xAI) — primary AI, best image understanding
+  // 1. Try Gemini first (Best free vision tier)
+  if (hasGemini) {
+    try {
+      return await classifyWithGemini(imageFile)
+    } catch (e) {
+      if (e.notCivic) throw e
+      console.warn(`[Gemini] ${e.message} — falling back to Groq`)
+      lastError = e
+    }
+  }
+
+  // 2. Try Groq (Fastest Llama 3.2 Vision)
+  if (hasGroq) {
+    try {
+      const parsed = await tryGroq(imageFile)
+      return parseAndBuildResult(parsed)
+    } catch (e) {
+      if (e.notCivic) throw e
+      console.warn(`[Groq] ${e.message} — falling back to Grok`)
+      lastError = e
+    }
+  }
+
+  // 3. Try Grok (xAI)
   if (hasGrok) {
     try {
       const parsed = await tryGrok(imageFile)
       return parseAndBuildResult(parsed)
     } catch (e) {
       if (e.notCivic) throw e
-      console.warn(`[Grok] ${e.message} — falling back to Gemini`)
+      console.warn(`[Grok] ${e.message} — falling back to Ollama`)
       lastError = e
     }
   }
 
-  // 2. Gemini fallback
-  if (hasGemini) {
-    try {
-      return await classifyWithGemini(imageFile)
-    } catch (e) {
-      if (e.notCivic) throw e
-      console.warn(`[Gemini] ${e.message} — falling back to Ollama`)
-      lastError = e
-    }
-  }
-
-  // 3. Ollama local fallback
+  // 4. Ollama local fallback
   try {
     const parsed = await tryOllama(imageFile)
     return parseAndBuildResult(parsed)
@@ -310,11 +324,14 @@ export async function classifyImage(imageFile) {
   const sev   = 3
   
   return {
-    category: cat, severity: sev,
-    priority:    calcPriority(sev, cat),
-    department:  DEPARTMENTS[cat],
-    isHighRisk:  false,
-    description: '⚠️ AI Analysis Failed (API blocked & hardware limits exceeded). Using Demo Mode data so you can test the app submission!',
-    confidence:  0.5,
+    category: 'other', 
+    severity: 3,
+    priority: calcPriority(3, 'other'),
+    department: DEPARTMENTS['other'],
+    isHighRisk: false,
+    description: '',
+    confidence: 0,
+    aiFailed: true,
+    error: lastError.message.slice(0, 100)
   }
 }
