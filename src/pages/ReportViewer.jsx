@@ -48,7 +48,7 @@ function IssueDetail({ issue }) {
           { label: 'Department', value: issue.department,            color: 'var(--text-primary)' },
           { label: 'Reported',   value: new Date(issue.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), color: 'var(--text-primary)' },
           ...(issue.worker_phone || issue.worker_name ? [{
-            label: 'Assigned Worker',
+            label: 'Assigned Volunteer',
             value: `${issue.worker_name || 'Agent'} (${issue.worker_phone || 'N/A'})`,
             color: '#2563eb'
           }] : [])

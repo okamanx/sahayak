@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet'
 import L from 'leaflet'
 import { fetchAllIssues, CATEGORY_ICONS } from '../lib/supabase'
-import { AdminNav } from './AdminDashboard'
+import AdminBottomNav from '../components/AdminBottomNav'
 import { RefreshCw, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -63,11 +63,17 @@ export default function AdminMap() {
   const center = filtered[0] ? [filtered[0].latitude, filtered[0].longitude] : [20.5937, 78.9629]
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-page)' }}>
-      <AdminNav active="/admin/map" />
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-page)', paddingBottom: 0 }}>
+      {/* Header */}
+      <div className="admin-header" style={{ display: 'flex', alignItems: 'center', padding: '0 20px', height: 60, borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 24 }}>🏙️</span>
+          <span style={{ fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', fontFamily: 'Outfit,sans-serif' }}>Live Map</span>
+        </div>
+      </div>
 
       {/* Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 16px', borderBottom: '1px solid var(--border)', background: 'var(--bg-card)', flexWrap: 'wrap', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 4, flex: 1 }}>
           {[
             { key: 'all',         label: 'All' },
@@ -108,7 +114,7 @@ export default function AdminMap() {
       </div>
 
       {/* Map */}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, position: 'relative', zIndex: 0 }}>
         <MapContainer center={center} zoom={filtered.length === 1 ? 15 : 5} style={{ height: '100%', width: '100%' }}>
           <TileLayer
             url={TILES[tileMode]}
@@ -151,17 +157,7 @@ export default function AdminMap() {
         </MapContainer>
       </div>
 
-      {/* Legend */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px', background: 'var(--bg-card)', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
-        {Object.entries(STATUS_COLORS).map(([s, c]) => (
-          <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
-            <div style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />{s}
-          </div>
-        ))}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--text-secondary)' }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#ef4444' }} />High Risk
-        </div>
-      </div>
+      <AdminBottomNav />
     </div>
   )
 }

@@ -131,16 +131,31 @@ export async function verifyOTP(email, token) {
   return data
 }
 
-// ── Worker Operations ──────────────────────────────────────────────
-export async function loginWorker(phone, password) {
+// ── Volunteer Operations ──────────────────────────────────────────────
+export async function registerVolunteer(details) {
+  // details: { name, phone, password, alt_phone, from_origin, location, age, gender }
   const { data, error } = await supabase
-    .from('workers').select('*')
+    .from('workers') // Reusing table but with more fields
+    .insert([details])
+    .select()
+    .single()
+  if (error) {
+    if (error.code === '23505') throw new Error('Phone number already registered')
+    throw error
+  }
+  return data
+}
+
+export async function loginVolunteer(phone, password) {
+  const { data, error } = await supabase
+    .from('workers')
+    .select('*')
     .eq('phone', phone).eq('password', password).single()
   if (error) throw new Error('Invalid credentials')
   return data
 }
 
-export async function fetchWorkerIssues(phone) {
+export async function fetchVolunteerIssues(phone) {
   const { data, error } = await supabase
     .from('issues').select('*')
     .eq('worker_phone', phone)
@@ -164,17 +179,17 @@ export async function resolveIssue(id, cost, imageUrl, notes) {
   return data
 }
 
-export async function assignWorkerToIssue(id, workerPhone, workerName) {
+export async function assignVolunteerToIssue(id, vPhone, vName) {
   const { data, error } = await supabase
     .from('issues')
-    .update({ worker_phone: workerPhone, worker_name: workerName })
+    .update({ worker_phone: vPhone, worker_name: vName })
     .eq('id', id)
   if (error) throw error
   return data
 }
 
-// ── Update Worker Profile ──────────────────────────────────────────
-export async function updateWorkerProfile(id, updates) {
+// ── Update Volunteer Profile ──────────────────────────────────────────
+export async function updateVolunteerProfile(id, updates) {
   const { data, error } = await supabase
     .from('workers')
     .update(updates)
@@ -183,4 +198,16 @@ export async function updateWorkerProfile(id, updates) {
     .single()
   if (error) throw new Error(error.message || 'Failed to update profile')
   return data
+}
+
+// ── Utility: Calculate Distance (Location Verification) ──────────
+export function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c * 1000; // Multiplied by 1000 to get meters
 }
