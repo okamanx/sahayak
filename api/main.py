@@ -29,8 +29,14 @@ if GEMINI_KEY:
 
 
 @app.get("/")
+@app.head("/")
 def root():
     return {"status": "ok", "service": "Sahayak AI Classifier"}
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return {}
 
 
 @app.get("/health")
