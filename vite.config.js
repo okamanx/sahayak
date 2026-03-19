@@ -46,5 +46,16 @@ export default defineConfig({
     transformer: 'postcss',   // disable LightningCSS so Tailwind @apply works
     devSourcemap: true,
   },
-  server: { port: 5173, https: true },
+  server: { 
+    port: 5173, 
+    https: true,
+    proxy: {
+      '/api/ollama': {
+        target: 'http://localhost:11434',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api\/ollama/, '')
+      }
+    }
+  },
 })

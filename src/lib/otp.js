@@ -46,7 +46,10 @@ export async function sendOTP(contact, type = 'email') {
       const phone = normalizePhone(contact)
       ;({ error } = await supabase.auth.signInWithOtp({ phone }))
     } else {
-      ;({ error } = await supabase.auth.signInWithOtp({ email: contact }))
+      ;({ error } = await supabase.auth.signInWithOtp({ 
+        email: contact,
+        options: { emailRedirectTo: window.location.origin } 
+      }))
     }
     if (error) throw new Error(error.message)
     return { demo: false }

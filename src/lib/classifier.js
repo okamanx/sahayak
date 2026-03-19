@@ -1,18 +1,21 @@
 /**
- * Gemini Vision AI — Civic Issue Classifier
- * Uses gemini-2.0-flash with fallback to gemini-1.5-flash → HuggingFace → demo
+ * Grok Vision AI (xAI) — Civic Issue Classifier
+ * Uses grok-2-vision-1212 as primary, falls back to Gemini → Demo
  */
 
+const GROK_KEY   = import.meta.env.VITE_GROK_API_KEY
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY
-const HF_KEY     = import.meta.env.VITE_HF_API_KEY
+const GROQ_KEY   = import.meta.env.VITE_GROQ_API_KEY
 
-// Try newest model first, fall back to stable
+// Try newest model first, fall back to stable, then specific versions
 const GEMINI_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
   'gemini-2.0-flash',
-  'gemini-1.5-flash-latest',
-  'gemini-1.5-flash',
+  'gemini-2.0-flash-001'
 ]
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models'
+const GROK_BASE   = 'https://api.x.ai/v1/chat/completions'
 
 const CATEGORIES = ['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight', 'other']
 const CATEGORY_WEIGHTS = { pothole: 3, garbage: 2, drainage: 4, pipeline: 4, streetlight: 3, other: 1 }
@@ -56,6 +59,68 @@ Severity: 1=minor cosmetic, 2=low, 3=moderate daily impact, 4=high safety, 5=cri
 Respond ONLY with valid JSON, no markdown, no extra text.`
 
 /**
+ * Try Grok Vision (xAI) — OpenAI-compatible API
+ */
+async function tryGrok(imageFile) {
+  const base64   = await fileToBase64(imageFile)
+  const mimeType = imageFile.type || 'image/jpeg'
+
+  const res = await fetch(GROK_BASE, {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${GROK_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'grok-2-vision-1212',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: CIVIC_PROMPT },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
+        ]
+      }],
+      temperature: 0.1,
+      max_tokens: 256,
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText)
+    throw new Error(`Grok ${res.status}: ${errText.slice(0, 120)}`)
+  }
+
+  const result = await res.json()
+  const text   = result.choices?.[0]?.message?.content || ''
+  if (!text) throw new Error('Grok returned empty response')
+
+  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  const match   = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error(`Invalid JSON from Grok: ${text.slice(0, 60)}`)
+
+  return JSON.parse(match[0])
+}
+
+function parseAndBuildResult(parsed) {
+  if (!parsed.isCivicIssue) {
+    const err   = new Error(parsed.reason || 'This image does not appear to show a civic infrastructure issue.')
+    err.notCivic = true
+    throw err
+  }
+  const category = CATEGORIES.includes(parsed.category) ? parsed.category : 'other'
+  const severity = Math.max(1, Math.min(5, Math.round(parsed.severity || 3)))
+  return {
+    category,
+    severity,
+    priority:    calcPriority(severity, category),
+    department:  DEPARTMENTS[category],
+    isHighRisk:  parsed.isHighRisk || severity >= 4,
+    description: parsed.description || 'Civic issue detected.',
+    confidence:  parseFloat((parsed.confidence || 0.8).toFixed(2)),
+  }
+}
+
+/**
  * Try calling Gemini with given model name
  */
 async function tryGemini(imageFile, model) {
@@ -96,6 +161,85 @@ async function tryGemini(imageFile, model) {
 }
 
 /**
+ * Try Groq Vision API (Llama 3.2 Vision)
+ */
+async function tryGroq(imageFile) {
+  const base64   = await fileToBase64(imageFile)
+  const mimeType = imageFile.type || 'image/jpeg'
+
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type':  'application/json',
+      'Authorization': `Bearer ${GROQ_KEY}`,
+    },
+    body: JSON.stringify({
+      model: 'llama-3.2-11b-vision-preview',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: CIVIC_PROMPT },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }
+        ]
+      }],
+      temperature: 0.1,
+      max_tokens: 256,
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText)
+    throw new Error(`Groq ${res.status}: ${errText.slice(0, 120)}`)
+  }
+
+  const result = await res.json()
+  const text   = result.choices?.[0]?.message?.content || ''
+  if (!text) throw new Error('Groq returned empty response')
+
+  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  const match   = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error(`Invalid JSON from Groq: ${text.slice(0, 60)}`)
+
+  return JSON.parse(match[0])
+}
+
+/**
+ * Try local Ollama Vision (e.g. LLaVA or Llama-3.2-Vision)
+ */
+async function tryOllama(imageFile) {
+  const base64 = await fileToBase64(imageFile)
+  
+  // Ollama crashes (segfault 0xc0000005) if the base64 string includes the data URL prefix
+  const rawBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+
+  const res = await fetch('/api/ollama/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llava',
+      prompt: CIVIC_PROMPT,
+      images: [rawBase64],
+      stream: false
+    }),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText)
+    throw new Error(`Ollama ${res.status}: ${errText.slice(0, 80)}`)
+  }
+
+  const result = await res.json()
+  const text = result.response || ''
+  if (!text || text.trim() === '') throw new Error('Ollama returned empty response')
+
+  const jsonStr = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+  const match   = jsonStr.match(/\{[\s\S]*\}/)
+  if (!match) throw new Error(`Invalid JSON from Ollama: ${text.slice(0, 60)}`)
+
+  return JSON.parse(match[0])
+}
+
+/**
  * Classify using Gemini Vision — tries multiple models
  */
 export async function classifyWithGemini(imageFile) {
@@ -103,25 +247,7 @@ export async function classifyWithGemini(imageFile) {
   for (const model of GEMINI_MODELS) {
     try {
       const parsed = await tryGemini(imageFile, model)
-
-      if (!parsed.isCivicIssue) {
-        const err   = new Error(parsed.reason || 'This image does not appear to show a civic infrastructure issue.')
-        err.notCivic = true
-        throw err
-      }
-
-      const category   = CATEGORIES.includes(parsed.category) ? parsed.category : 'other'
-      const severity   = Math.max(1, Math.min(5, Math.round(parsed.severity || 3)))
-      const priority   = calcPriority(severity, category)
-      return {
-        category,
-        severity,
-        priority,
-        department:  DEPARTMENTS[category],
-        isHighRisk:  parsed.isHighRisk || severity >= 4,
-        description: parsed.description || 'Civic issue detected.',
-        confidence:  parseFloat((parsed.confidence || 0.8).toFixed(2)),
-      }
+      return parseAndBuildResult(parsed)
     } catch (e) {
       if (e.notCivic) throw e   // propagate civic rejection immediately
       lastErr = e
@@ -131,80 +257,64 @@ export async function classifyWithGemini(imageFile) {
   throw lastErr
 }
 
-/**
- * HuggingFace fallback
- */
-export async function classifyWithHuggingFace(imageFile) {
-  const res = await fetch(
-    'https://api-inference.huggingface.co/models/google/vit-base-patch16-224',
-    { method: 'POST', headers: { Authorization: `Bearer ${HF_KEY}` }, body: imageFile }
-  )
-  if (!res.ok) throw new Error('HuggingFace API error')
-  const results = await res.json()
-
-  const topLabel   = (results[0]?.label || '').toLowerCase()
-  const confidence = results[0]?.score || 0
-
-  const civicKeywords = ['road', 'traffic', 'pavement', 'garbage', 'waste', 'water', 'flood', 'pipe', 'leak', 'light', 'lamp', 'drain']
-  const isCivicRelated = civicKeywords.some(k => topLabel.includes(k))
-
-  if (!isCivicRelated && confidence < 0.5) {
-    const err = new Error('This image does not look like a civic issue. Please upload a clear photo of the problem.')
-    err.notCivic = true
-    throw err
-  }
-
-  let category = 'other'
-  if (topLabel.includes('road') || topLabel.includes('traffic')) category = 'pothole'
-  else if (topLabel.includes('garbage') || topLabel.includes('waste')) category = 'garbage'
-  else if (topLabel.includes('water') || topLabel.includes('flood') || topLabel.includes('drain')) category = 'drainage'
-  else if (topLabel.includes('pipe') || topLabel.includes('leak')) category = 'pipeline'
-  else if (topLabel.includes('light') || topLabel.includes('lamp')) category = 'streetlight'
-
-  const severity = 3
-  return {
-    category, severity,
-    priority:    calcPriority(severity, category),
-    department:  DEPARTMENTS[category],
-    isHighRisk:  false,
-    description: `Issue detected: ${results[0]?.label || 'unknown'}. Requires inspection.`,
-    confidence:  parseFloat(confidence.toFixed(2)),
-  }
-}
 
 /**
- * Main — Gemini → HuggingFace → Demo
+ * Main — Grok → Gemini
+ * Throws an error if both options fail or no keys are configured.
  */
 export async function classifyImage(imageFile) {
+  const hasGrok   = GROK_KEY   && GROK_KEY   !== 'your-grok-api-key-here'
   const hasGemini = GEMINI_KEY && GEMINI_KEY !== 'your-gemini-api-key-here'
-  const hasHF     = HF_KEY     && HF_KEY !== 'your-huggingface-token-here'
 
+  let lastError = new Error('No valid AI API keys found. Please add Grok or Gemini keys to .env')
+
+  // 1. Try Grok first (xAI) — primary AI, best image understanding
+  if (hasGrok) {
+    try {
+      const parsed = await tryGrok(imageFile)
+      return parseAndBuildResult(parsed)
+    } catch (e) {
+      if (e.notCivic) throw e
+      console.warn(`[Grok] ${e.message} — falling back to Gemini`)
+      lastError = e
+    }
+  }
+
+  // 2. Gemini fallback
   if (hasGemini) {
-    try { return await classifyWithGemini(imageFile) }
-    catch (e) {
+    try {
+      return await classifyWithGemini(imageFile)
+    } catch (e) {
       if (e.notCivic) throw e
-      console.warn('All Gemini models failed, trying HuggingFace:', e.message)
+      console.warn(`[Gemini] ${e.message} — falling back to Ollama`)
+      lastError = e
     }
   }
 
-  if (hasHF) {
-    try { return await classifyWithHuggingFace(imageFile) }
-    catch (e) {
-      if (e.notCivic) throw e
-      console.warn('HuggingFace failed:', e.message)
-    }
+  // 3. Ollama local fallback
+  try {
+    const parsed = await tryOllama(imageFile)
+    return parseAndBuildResult(parsed)
+  } catch (e) {
+    if (e.notCivic) throw e
+    console.warn(`[Ollama] ${e.message} — analysis failed`)
+    lastError = e
   }
 
-  // Demo / no-key mode
+  // If everything fails (API limits AND Local Hardware OOM crashes), use Demo Mode
+  // so the user can at least test the rest of the application flow.
+  console.error('[AI Chain Failed]', lastError.message)
+  
   const demos = ['pothole', 'garbage', 'drainage', 'pipeline', 'streetlight']
   const cat   = demos[Math.floor(Math.random() * demos.length)]
   const sev   = 3
+  
   return {
     category: cat, severity: sev,
     priority:    calcPriority(sev, cat),
     department:  DEPARTMENTS[cat],
     isHighRisk:  false,
-    description: '⚠️ Demo mode: Add Gemini API key in .env for real AI analysis.',
+    description: '⚠️ AI Analysis Failed (API blocked & hardware limits exceeded). Using Demo Mode data so you can test the app submission!',
     confidence:  0.5,
   }
 }

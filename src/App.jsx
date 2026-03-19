@@ -11,6 +11,8 @@ import ReportViewer from './pages/ReportViewer'
 import EmergencyPage from './pages/EmergencyPage'
 import UserLogin from './pages/UserLogin'
 import UserProfile from './pages/UserProfile'
+import WorkerLogin from './pages/WorkerLogin'
+import WorkerPortal from './pages/WorkerPortal'
 import AdminLogin from './pages/AdminLogin'
 import AdminDashboard from './pages/AdminDashboard'
 import AdminIssues from './pages/AdminIssues'
@@ -103,6 +105,10 @@ export default function App() {
             <Route path="/emergency" element={<UserRoute><EmergencyPage /></UserRoute>} />
             <Route path="/login"     element={<UserLogin />} />
             <Route path="/profile"   element={<UserRoute><UserProfile /></UserRoute>} />
+
+            {/* Worker routes */}
+            <Route path="/worker/login"  element={<WorkerLogin />} />
+            <Route path="/worker"        element={<WorkerPortal />} />
 
             {/* Admin routes */}
             <Route path="/admin"           element={<AdminLogin />} />

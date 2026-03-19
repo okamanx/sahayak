@@ -16,10 +16,12 @@ function statusStyle(status) {
 }
 
 export default function UserProfile() {
-  const { user, logout }    = useAuth()
+  const { user, logout, updateProfileName } = useAuth()
   const navigate            = useNavigate()
   const [issues, setIssues] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editName, setEditName] = useState('')
 
   useEffect(() => {
     if (!user) { navigate('/login'); return }
@@ -39,6 +41,16 @@ export default function UserProfile() {
     logout()
     toast.success('Logged out')
     navigate('/')
+  }
+
+  function handleSaveProfile() {
+    if (!editName.trim()) {
+      toast.error('Name cannot be empty')
+      return
+    }
+    updateProfileName(editName)
+    setIsEditing(false)
+    toast.success('Profile updated!')
   }
 
   if (!user) return null
@@ -64,9 +76,26 @@ export default function UserProfile() {
               {user.avatar || user.email.charAt(0).toUpperCase()}
             </div>
             <div>
-              <h1 style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 800, fontSize: 20, color: '#0f172a', margin: '0 0 2px' }}>{user.name || user.email.split('@')[0]}</h1>
+              {isEditing ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <input 
+                    type="text" 
+                    value={editName} 
+                    onChange={e => setEditName(e.target.value)} 
+                    className="input-field" 
+                    style={{ padding: '4px 8px', fontSize: 16, width: 140, height: 'auto' }}
+                  />
+                  <button onClick={handleSaveProfile} style={{ background: '#16a34a', color: 'white', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 600 }}>Save</button>
+                  <button onClick={() => setIsEditing(false)} style={{ background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 12, fontWeight: 600 }}>Cancel</button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <h1 style={{ fontFamily: 'Outfit,sans-serif', fontWeight: 800, fontSize: 20, color: '#0f172a', margin: 0 }}>{user.name || user.email.split('@')[0]}</h1>
+                  <button onClick={() => { setEditName(user.name || user.email.split('@')[0]); setIsEditing(true); }} style={{ fontSize: 11, background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: 4, padding: '2px 6px', fontWeight: 600, cursor: 'pointer' }}>Edit</button>
+                </div>
+              )}
               <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>{user.email}</p>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#dbeafe', padding: '2px 8px', borderRadius: 999, marginTop: 4 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#dbeafe', padding: '2px 8px', borderRadius: 999, margin: '4px 0 0 0' }}>
                 <span style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>VERIFIED CITIZEN</span>
               </div>
             </div>
@@ -143,6 +172,24 @@ export default function UserProfile() {
                       </span>
                     </div>
                   </div>
+                  
+                  {/* Inline Details for Voice & Text */}
+                  {(issue.description || issue.audio_url || issue.transcription) && (
+                    <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border)', background: '#f8fafc', borderBottomLeftRadius: 14, borderBottomRightRadius: 14 }}>
+                      {issue.description && (
+                        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.4 }}>{issue.description}</p>
+                      )}
+                      {issue.audio_url && (
+                        <audio controls src={issue.audio_url} style={{ width: '100%', height: 32, marginBottom: issue.transcription ? 8 : 0 }} />
+                      )}
+                      {issue.transcription && (
+                        <div style={{ background: '#f0fdf4', padding: '8px 10px', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+                          <p style={{ fontSize: 10, fontWeight: 800, color: '#16a34a', margin: '0 0 2px', textTransform: 'uppercase' }}>AI Transcript</p>
+                          <p style={{ fontSize: 12, color: '#15803d', margin: 0, fontStyle: 'italic', lineHeight: 1.4 }}>"{issue.transcription}"</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </motion.div>
               )
             })}

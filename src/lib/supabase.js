@@ -53,7 +53,6 @@ export function statusClass(status) {
   return 'badge-pending'
 }
 
-// ── Upload image to Supabase Storage ──────────────────────────────
 export async function uploadImage(file, bucket = 'issue-images') {
   const ext = file.name.split('.').pop()
   const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
@@ -64,6 +63,20 @@ export async function uploadImage(file, bucket = 'issue-images') {
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
   return publicUrl
 }
+
+// ── Upload audio to Supabase Storage ──────────────────────────────
+export async function uploadAudio(blob, bucket = 'issue-audio') {
+  const ext = blob.type && blob.type.includes('mp4') ? 'mp4' : 'webm'
+  const path = `voice-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  const { data, error } = await supabase.storage.from(bucket).upload(path, blob, {
+    cacheControl: '3600', upsert: false,
+    contentType: blob.type || 'audio/webm'
+  })
+  if (error) throw error
+  const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(path)
+  return publicUrl
+}
+
 
 // ── Fetch all issues (admin) ───────────────────────────────────────
 export async function fetchAllIssues(filters = {}) {
@@ -115,5 +128,59 @@ export async function sendOTP(email) {
 export async function verifyOTP(email, token) {
   const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
   if (error) throw error
+  return data
+}
+
+// ── Worker Operations ──────────────────────────────────────────────
+export async function loginWorker(phone, password) {
+  const { data, error } = await supabase
+    .from('workers').select('*')
+    .eq('phone', phone).eq('password', password).single()
+  if (error) throw new Error('Invalid credentials')
+  return data
+}
+
+export async function fetchWorkerIssues(phone) {
+  const { data, error } = await supabase
+    .from('issues').select('*')
+    .eq('worker_phone', phone)
+    .order('priority', { ascending: false })
+  if (error) throw error
+  return data
+}
+
+export async function resolveIssue(id, cost, imageUrl, notes) {
+  const { data, error } = await supabase
+    .from('issues')
+    .update({
+      status: 'Resolved',
+      resolved_at: new Date().toISOString(),
+      resolution_cost: cost,
+      resolution_image_url: imageUrl,
+      resolution_notes: notes
+    })
+    .eq('id', id)
+  if (error) throw error
+  return data
+}
+
+export async function assignWorkerToIssue(id, workerPhone, workerName) {
+  const { data, error } = await supabase
+    .from('issues')
+    .update({ worker_phone: workerPhone, worker_name: workerName })
+    .eq('id', id)
+  if (error) throw error
+  return data
+}
+
+// ── Update Worker Profile ──────────────────────────────────────────
+export async function updateWorkerProfile(id, updates) {
+  const { data, error } = await supabase
+    .from('workers')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw new Error(error.message || 'Failed to update profile')
   return data
 }

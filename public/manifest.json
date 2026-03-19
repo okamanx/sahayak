@@ -1,0 +1,27 @@
+{
+  "name": "Sahayak – Civic Issue Reporter",
+  "short_name": "Sahayak",
+  "description": "AI-powered civic issue reporting. Report potholes, garbage, drainage issues and more.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["utilities", "social"],
+  "lang": "en-IN",
+  "dir": "ltr",
+  "scope": "/"
+}

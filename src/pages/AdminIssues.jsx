@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
-import { RefreshCw, X, CheckCircle, Upload, DollarSign, FileText, AlertTriangle, Filter, Search } from 'lucide-react'
+import { RefreshCw, X, CheckCircle, Upload, DollarSign, FileText, AlertTriangle, Filter, Search, Play } from 'lucide-react'
 import { supabase, fetchAllIssues, uploadImage, CATEGORY_ICONS, DEPARTMENTS, statusClass } from '../lib/supabase'
 import { AdminNav } from './AdminDashboard'
 
@@ -15,6 +15,8 @@ function ResolutionModal({ issue, onClose, onResolved }) {
   const [cost, setCost]           = useState('')
   const [notes, setNotes]         = useState('')
   const [status, setStatus]       = useState('In Progress')
+  const [workerPhone, setWorkerPhone] = useState(issue.worker_phone || '')
+  const [workerName, setWorkerName]   = useState(issue.worker_name || '')
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSave() {
@@ -25,6 +27,8 @@ function ResolutionModal({ issue, onClose, onResolved }) {
 
       const updates = {
         status,
+        worker_phone: workerPhone || null,
+        worker_name: workerName || null,
         ...(status === 'Resolved' && {
           resolved_at: new Date().toISOString(),
           resolution_image_url: resImgUrl,
@@ -64,6 +68,28 @@ function ResolutionModal({ issue, onClose, onResolved }) {
         </div>
 
         <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Issue Details Section */}
+          {(issue.description || issue.audio_url || issue.transcription) && (
+            <div className="bg-dark-900 rounded-xl p-4 border border-white/5 space-y-3">
+              <h4 className="text-sm font-semibold text-white border-b border-white/10 pb-2 mb-2">Issue Details</h4>
+              
+              {issue.description && <p className="text-sm text-gray-300">{issue.description}</p>}
+              
+              {issue.audio_url && (
+                <div className="bg-dark-800 p-3 rounded-lg border border-white/5 flex flex-col gap-2">
+                  <span className="text-xs font-semibold text-blue-400 flex items-center gap-1"><Play size={12}/> Voice Report</span>
+                  <audio controls src={issue.audio_url} className="w-full h-8" />
+                </div>
+              )}
+              
+              {issue.transcription && (
+                <div className="bg-green-900/20 p-3 rounded-lg border border-green-500/20">
+                  <span className="text-xs font-bold text-green-500 tracking-wide uppercase mb-1 block">AI Transcription</span>
+                  <p className="text-sm text-green-400 italic">"{issue.transcription}"</p>
+                </div>
+              )}
+            </div>
+          )}
           {/* Status selector */}
           <div>
             <label className="text-sm text-gray-400 mb-2 block">New Status</label>
@@ -82,6 +108,21 @@ function ResolutionModal({ issue, onClose, onResolved }) {
                   {s}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Assign Worker fields */}
+          <div className="bg-dark-900 rounded-xl p-4 border border-white/5 space-y-3">
+            <h4 className="text-sm font-semibold text-white border-b border-white/10 pb-2 mb-2">Assign Worker</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Worker Phone</label>
+                <input type="tel" value={workerPhone} onChange={e => setWorkerPhone(e.target.value)} placeholder="+91..." className="input-field py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Worker Name</label>
+                <input type="text" value={workerName} onChange={e => setWorkerName(e.target.value)} placeholder="Name..." className="input-field py-2 text-sm" />
+              </div>
             </div>
           </div>
 

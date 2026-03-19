@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS issues (
   image_url         TEXT,
   contact_phone     TEXT,
   contact_email     TEXT,
+  audio_url         TEXT,
+  transcription     TEXT,
   created_at        TIMESTAMPTZ DEFAULT NOW(),
   updated_at        TIMESTAMPTZ DEFAULT NOW(),
   -- Resolution fields
@@ -69,8 +71,10 @@ CREATE POLICY "Admin update" ON issues
 -- Run these in Supabase Dashboard → Storage, or via API:
 -- 1. Create bucket 'issue-images' (public)
 -- 2. Create bucket 'resolution-images' (public)
+-- 3. Create bucket 'issue-audio' (public)
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('issue-images', 'issue-images', true);
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('resolution-images', 'resolution-images', true);
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('issue-audio', 'issue-audio', true);
 
 -- ── Sample Data (optional for demo) ───────────────────────────────
 -- INSERT INTO issues (report_id, category, severity, priority, department, is_high_risk, description, latitude, longitude, address, status)

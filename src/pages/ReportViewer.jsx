@@ -47,6 +47,11 @@ function IssueDetail({ issue }) {
           { label: 'Priority',   value: `Score: ${issue.priority}`,  color: '#dc2626' },
           { label: 'Department', value: issue.department,            color: 'var(--text-primary)' },
           { label: 'Reported',   value: new Date(issue.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), color: 'var(--text-primary)' },
+          ...(issue.worker_phone || issue.worker_name ? [{
+            label: 'Assigned Worker',
+            value: `${issue.worker_name || 'Agent'} (${issue.worker_phone || 'N/A'})`,
+            color: '#2563eb'
+          }] : [])
         ].map(({ label, value, color }) => (
           <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
             <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</span>
@@ -60,6 +65,32 @@ function IssueDetail({ issue }) {
         <div className="card" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12, padding: '12px 16px' }}>
           <MapPin size={16} color="#2563eb" style={{ flexShrink: 0, marginTop: 2 }} />
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>{issue.address}</p>
+        </div>
+      )}
+
+      {/* Description & Audio */}
+      {(issue.description || issue.audio_url || issue.transcription) && (
+        <div className="card" style={{ marginBottom: 12, padding: '16px' }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px' }}>Description</h4>
+          {issue.description && (
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5 }}>{issue.description}</p>
+          )}
+          
+          {issue.audio_url && (
+            <div style={{ background: '#f8fafc', padding: 12, borderRadius: 12, border: '1px solid var(--border)', marginBottom: issue.transcription ? 10 : 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#2563eb' }}>▶ Voice Report</span>
+              </div>
+              <audio controls src={issue.audio_url} style={{ width: '100%', height: 36 }} />
+            </div>
+          )}
+
+          {issue.transcription && (
+            <div style={{ background: '#f0fdf4', padding: 12, borderRadius: 12, border: '1px solid #bbf7d0' }}>
+              <p style={{ fontSize: 11, fontWeight: 800, color: '#16a34a', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI Transcription</p>
+              <p style={{ fontSize: 13, color: '#15803d', margin: 0, fontStyle: 'italic', lineHeight: 1.5 }}>"{issue.transcription}"</p>
+            </div>
+          )}
         </div>
       )}
 

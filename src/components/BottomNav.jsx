@@ -7,7 +7,6 @@ const TABS = [
   { path: '/',          icon: Home,          label: 'Home' },
   { path: '/report',    icon: PlusCircle,    label: 'Report' },
   { path: '/track',     icon: Search,        label: 'Track' },
-  { path: '/emergency', icon: AlertTriangle, label: 'SOS' },
 ]
 
 export default function BottomNav() {
@@ -56,12 +55,6 @@ export default function BottomNav() {
           <span>Login</span>
         </button>
       )}
-
-      {/* Dark mode toggle */}
-      <button onClick={toggle} className="nav-item" title="Toggle theme">
-        {dark ? <Sun size={20} strokeWidth={1.8} /> : <Moon size={20} strokeWidth={1.8} />}
-        <span>{dark ? 'Light' : 'Dark'}</span>
-      </button>
     </nav>
   )
 }

@@ -7,6 +7,14 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)   // { email, id, name, avatar }
   const [loading, setLoading] = useState(true)
 
+  function makeUser(email) {
+    return {
+      email,
+      name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+      avatar: email.charAt(0).toUpperCase(),
+    }
+  }
+
   useEffect(() => {
     // Check for stored session (works even without Supabase)
     const stored = localStorage.getItem('sahayak_user')
@@ -42,14 +50,6 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
-  function makeUser(email) {
-    return {
-      email,
-      name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-      avatar: email.charAt(0).toUpperCase(),
-    }
-  }
-
   function loginDemo(email, displayName) {
     const u = {
       email,
@@ -67,8 +67,15 @@ export function AuthProvider({ children }) {
     if (isConfigured) supabase.auth.signOut()
   }
 
+  function updateProfileName(newName) {
+    if (!user) return
+    const u = { ...user, name: newName }
+    setUser(u)
+    localStorage.setItem('sahayak_user', JSON.stringify(u))
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, loginDemo, logout, makeUser }}>
+    <AuthContext.Provider value={{ user, loading, loginDemo, logout, makeUser, updateProfileName }}>
       {children}
     </AuthContext.Provider>
   )

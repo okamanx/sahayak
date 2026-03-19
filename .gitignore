@@ -30,3 +30,9 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Local test and utility scripts
+test_*.js
+test_*.mjs
+create_worker.js
+models.json
