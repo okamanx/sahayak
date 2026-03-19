@@ -1,0 +1,37 @@
+services:
+  # 🐍 BACKEND (FastAPI - AI Classifier)
+  - type: web
+    name: sahayak-backend
+    env: python
+    buildCommand: "cd api && pip install -r requirements.txt"
+    startCommand: "cd api && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_GEMINI_API_KEY
+        sync: false
+      - key: VITE_GROK_API_KEY
+        sync: false
+      - key: VITE_GROQ_API_KEY
+        sync: false
+
+  # ⚛️ FRONTEND (Vite - Static Site)
+  - type: static
+    name: sahayak-frontend
+    env: static
+    buildCommand: "npm install && npm run build"
+    publishPath: "./dist"
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: sahayak-backend
+          type: web
+          property: host
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_MAPBOX_TOKEN
+        sync: false
